@@ -21,6 +21,7 @@ from sas.qtgui.Plotting.WindowTitle import WindowTitle
 import sas.qtgui.Utilities.GuiUtils as GuiUtils
 import sas.qtgui.Plotting.PlotHelper as PlotHelper
 import sas.qtgui.Plotting.PlotUtilities as PlotUtilities
+from sas.qtgui.Plotting.PanAndZoom import PanAndZoom
 
 class PlotterBase(QtWidgets.QWidget):
     def __init__(self, parent=None, manager=None, quickplot=False):
@@ -38,6 +39,7 @@ class PlotterBase(QtWidgets.QWidget):
 
         # a figure instance to plot on
         self.figure = plt.figure()
+        self.figure.pan_zoom = PanAndZoom(self.figure)
 
         # Define canvas for the figure to be placed on
         self.canvas = FigureCanvas(self.figure)
@@ -101,26 +103,26 @@ class PlotterBase(QtWidgets.QWidget):
         # Set the background color to white
         self.canvas.figure.set_facecolor('#FFFFFF')
 
-        # Canvas event handlers
-        self.canvas.mpl_connect('button_release_event', self.onMplMouseUp)
-        self.canvas.mpl_connect('button_press_event', self.onMplMouseDown)
-        self.canvas.mpl_connect('motion_notify_event', self.onMplMouseMotion)
-        self.canvas.mpl_connect('pick_event', self.onMplPick)
-        self.canvas.mpl_connect('scroll_event', self.onMplWheel)
+        ## Canvas event handlers
+        #self.canvas.mpl_connect('button_release_event', self.onMplMouseUp)
+        #self.canvas.mpl_connect('button_press_event', self.onMplMouseDown)
+        #self.canvas.mpl_connect('motion_notify_event', self.onMplMouseMotion)
+        #self.canvas.mpl_connect('pick_event', self.onMplPick)
+        #self.canvas.mpl_connect('scroll_event', self.onMplWheel)
 
-        self.contextMenu = QtWidgets.QMenu(self)
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        cid = self.canvas.mpl_connect('resize_event', self.onResize)
+        #self.contextMenu = QtWidgets.QMenu(self)
+        #self.toolbar = NavigationToolbar(self.canvas, self)
+        #cid = self.canvas.mpl_connect('resize_event', self.onResize)
 
-        layout.addWidget(self.toolbar)
-        if not quickplot:
-            # Add the toolbar
-            # self.toolbar.show()
-            self.toolbar.hide() # hide for the time being
-            # Notify PlotHelper about the new plot
-            self.upatePlotHelper()
-        else:
-            self.toolbar.hide()
+        #layout.addWidget(self.toolbar)
+        #if not quickplot:
+        #    # Add the toolbar
+        #    self.toolbar.show()
+        #    #self.toolbar.hide() # hide for the time being
+        #    # Notify PlotHelper about the new plot
+        #    self.upatePlotHelper()
+        #else:
+        #    self.toolbar.hide()
 
         self.setLayout(layout)
 
@@ -255,13 +257,14 @@ class PlotterBase(QtWidgets.QWidget):
         """
         Display the context menu
         """
-        if not self.quickplot:
-            self.createContextMenu()
-        else:
-            self.createContextMenuQuick()
+        #if not self.quickplot:
+        #    self.createContextMenu()
+        #else:
+        #    self.createContextMenuQuick()
 
-        event_pos = event.pos()
-        self.contextMenu.exec_(self.canvas.mapToGlobal(event_pos))
+        #event_pos = event.pos()
+        #self.contextMenu.exec_(self.canvas.mapToGlobal(event_pos))
+        pass
 
     def onMplMouseUp(self, event):
         """
@@ -438,3 +441,143 @@ class PlotterBase(QtWidgets.QWidget):
             GuiUtils.saveData1D(plot_data)
         else:
             GuiUtils.saveData2D(plot_data)
+
+    def _axes_to_update(self, event):
+        """Returns two sets of Axes to update according to event.
+        Takes care of multiple axes and shared axes.
+        :param MouseEvent event: Matplotlib event to consider
+        :return: Axes for which to update xlimits and ylimits
+        :rtype: 2-tuple of set (xaxes, yaxes)
+        """
+        x_axes, y_axes = set(), set()
+
+        # Go through all axes to enable zoom for multiple axes subplots
+        for ax in self.figure.axes:
+            if ax.contains(event)[0]:
+                # For twin x axes, makes sure the zoom is applied once
+                shared_x_axes = set(ax.get_shared_x_axes().get_siblings(ax))
+                if x_axes.isdisjoint(shared_x_axes):
+                    x_axes.add(ax)
+
+                # For twin y axes, makes sure the zoom is applied once
+                shared_y_axes = set(ax.get_shared_y_axes().get_siblings(ax))
+                if y_axes.isdisjoint(shared_y_axes):
+                    y_axes.add(ax)
+
+        return x_axes, y_axes
+
+    def _pan(self, event):
+        if event.name == 'button_press_event':  # begin pan
+            self._event = event
+
+        elif event.name == 'button_release_event':  # end pan
+            self._event = None
+
+        elif event.name == 'motion_notify_event':  # pan
+            if self._event is None:
+                return
+
+            if event.x != self._event.x:
+                for ax in self._axes[0]:
+                    xlim = self._pan_update_limits(ax, 0, event, self._event)
+                    ax.set_xlim(xlim)
+
+            if event.y != self._event.y:
+                for ax in self._axes[1]:
+                    ylim = self._pan_update_limits(ax, 1, event, self._event)
+                    ax.set_ylim(ylim)
+
+            if event.x != self._event.x or event.y != self._event.y:
+                self.canvas.draw_idle()
+    
+            self._event = event
+
+    @staticmethod
+    def _pan_update_limits(ax, axis_id, event, last_event):
+        """Compute limits with applied pan."""
+        assert axis_id in (0, 1)
+        if axis_id == 0:
+            lim = ax.get_xlim()
+            scale = ax.get_xscale()
+        else:
+            lim = ax.get_ylim()
+            scale = ax.get_yscale()
+
+        pixel_to_data = ax.transData.inverted()
+        data = pixel_to_data.transform_point((event.x, event.y))
+        last_data = pixel_to_data.transform_point((last_event.x, last_event.y))
+
+        if scale == 'linear':
+            delta = data[axis_id] - last_data[axis_id]
+            new_lim = lim[0] - delta, lim[1] - delta
+        elif scale == 'log':
+            try:
+                delta = numpy.log10(data[axis_id]) - \
+                    numpy.log10(last_data[axis_id])
+                new_lim = [pow(10., (numpy.log10(lim[0]) - delta)),
+                           pow(10., (numpy.log10(lim[1]) - delta))]
+            except (ValueError, OverflowError):
+                new_lim = lim  # Keep previous limits
+        else:
+            logging.warning('Pan not implemented for scale "%s"' % scale)
+            new_lim = lim
+        return new_lim
+
+    def _zoom_area(self, event):
+        if event.name == 'button_press_event':  # begin drag
+            self._event = event
+            self._patch = plt.Rectangle(
+                xy=(event.xdata, event.ydata), width=0, height=0,
+                fill=False, linewidth=1., linestyle='solid', color='black')
+            self._event.inaxes.add_patch(self._patch)
+
+        elif event.name == 'button_release_event':  # end drag
+            self._patch.remove()
+            del self._patch
+
+            if (abs(event.x - self._event.x) < 3 or
+                    abs(event.y - self._event.y) < 3):
+                return  # No zoom when points are too close
+
+            x_axes, y_axes = self._axes
+
+            for ax in x_axes:
+                pixel_to_data = ax.transData.inverted()
+                begin_pt = pixel_to_data.transform_point((event.x, event.y))
+                end_pt = pixel_to_data.transform_point(
+                    (self._event.x, self._event.y))
+
+                min_ = min(begin_pt[0], end_pt[0])
+                max_ = max(begin_pt[0], end_pt[0])
+                if not ax.xaxis_inverted():
+                    ax.set_xlim(min_, max_)
+                else:
+                    ax.set_xlim(max_, min_)
+
+            for ax in y_axes:
+                pixel_to_data = ax.transData.inverted()
+                begin_pt = pixel_to_data.transform_point((event.x, event.y))
+                end_pt = pixel_to_data.transform_point(
+                    (self._event.x, self._event.y))
+
+                min_ = min(begin_pt[1], end_pt[1])
+                max_ = max(begin_pt[1], end_pt[1])
+                if not ax.yaxis_inverted():
+                    ax.set_ylim(min_, max_)
+                else:
+                    ax.set_ylim(max_, min_)
+
+            self._event = None
+
+        elif event.name == 'motion_notify_event':  # drag
+            if self._event is None:
+                return
+
+            if event.inaxes != self._event.inaxes:
+                return  # Ignore event outside plot
+
+            self._patch.set_width(event.xdata - self._event.xdata)
+            self._patch.set_height(event.ydata - self._event.ydata)
+
+        self.canvas.draw_idle()
+

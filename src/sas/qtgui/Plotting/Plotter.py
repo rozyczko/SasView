@@ -643,8 +643,20 @@ class PlotterWidget(PlotterBase):
         Left button down and ready to drag
         """
         # Check that the LEFT button was pressed
-        if event.button != 1:
-            return
+        #if event.button != 1:
+        #    return
+
+        if event.button in (1, 3):
+            x_axes, y_axes = self._axes_to_update(event)
+            if x_axes or y_axes:
+                self._axes = x_axes, y_axes
+                self._pressed_button = event.button
+                if self._pressed_button == 1:  # pan
+                    self._pan(event)
+                elif self._pressed_button == 3:  # zoom area
+                    self._zoom_area(event)
+
+        return
 
         self.leftdown = True
         for text in self.textList:
@@ -688,6 +700,11 @@ class PlotterWidget(PlotterBase):
         if self.gotLegend == 1 and self.leftdown:
             self.onLegendMotion(event)
             return
+
+        ## no text selected - panning the chart
+        #if self.leftdown and self.selectedText is None:
+        #    x,y = event.xdata, event.ydata
+        #    pass
 
         #if self.leftdown and self.selectedText is not None:
         if not self.leftdown or self.selectedText is None:
@@ -758,6 +775,9 @@ class PlotterWidget(PlotterBase):
         """
         Process mouse wheel as zoom events
         """
+        event.accept()
+        return
+
         ax = event.inaxes
         step = event.step
 
