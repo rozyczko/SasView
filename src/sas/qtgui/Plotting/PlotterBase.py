@@ -222,8 +222,9 @@ class PlotterBase(QtWidgets.QWidget):
         self.actionSaveImage = self.contextMenu.addAction("Save Image")
         self.actionPrintImage = self.contextMenu.addAction("Print Image")
         self.actionCopyToClipboard = self.contextMenu.addAction("Copy to Clipboard")
-        #self.contextMenu.addSeparator()
-        #self.actionToggleMenu = self.contextMenu.addAction("Toggle Navigation Menu")
+        self.contextMenu.addSeparator()
+        #self.actionCustomiseMenu = self.contextMenu.addAction("Toggle Navigation Menu")
+        self.actionGraphAppearance = self.contextMenu.addAction("Modify Graph Appearance")
         self.contextMenu.addSeparator()
 
 
@@ -231,7 +232,7 @@ class PlotterBase(QtWidgets.QWidget):
         self.actionSaveImage.triggered.connect(self.onImageSave)
         self.actionPrintImage.triggered.connect(self.onImagePrint)
         self.actionCopyToClipboard.triggered.connect(self.onClipboardCopy)
-        #self.actionToggleMenu.triggered.connect(self.onToggleMenu)
+        self.actionGraphAppearance.triggered.connect(self.onShowOptions)
 
     def createContextMenu(self):
         """
@@ -385,17 +386,11 @@ class PlotterBase(QtWidgets.QWidget):
         # Notify the listeners about a new graph title
         self.manager.communicator.activeGraphName.emit((current_title, title))
 
-    def onToggleMenu(self):
+    def onShowOptions(self):
         """
-        Toggle navigation menu visibility in the chart
+        Show navigation menu's Figure Options widget
         """
-        self.toolbar.hide()
-        # Current toolbar menu is too buggy.
-        # Comment out until we support 3.x, then recheck.
-        #if self.toolbar.isVisible():
-        #    self.toolbar.hide()
-        #else:
-        #    self.toolbar.show()
+        self.toolbar.edit_parameters()
 
     def offset_graph(self):
         """
